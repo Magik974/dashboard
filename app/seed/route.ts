@@ -1,117 +1,133 @@
 import bcrypt from 'bcrypt';
-import postgres from 'postgres';
+import { createClient } from '@supabase/supabase-js';
+import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import { invoices, customers, revenue, users } from '../lib/placeholder-data';
 
-const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
+// Configure global proxy agent for corporate network
+const proxyAgent = new ProxyAgent({
+  uri: 'http://host.containers.internal:9000',
+  requestTls: {
+    rejectUnauthorized: false
+  }
+});
+setGlobalDispatcher(proxyAgent);
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+);
 
 async function seedUsers() {
-  await sql`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`;
-  await sql`
-    CREATE TABLE IF NOT EXISTS users (
-      id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      email TEXT NOT NULL UNIQUE,
-      password TEXT NOT NULL
-    );
-  `;
-
-  const insertedUsers = await Promise.all(
+  const results = await Promise.all(
     users.map(async (user) => {
       const hashedPassword = await bcrypt.hash(user.password, 10);
-      return sql`
-        INSERT INTO users (id, name, email, password)
-        VALUES (${user.id}, ${user.name}, ${user.email}, ${hashedPassword})
-        ON CONFLICT (id) DO NOTHING;
-      `;
+      const { data, error } = await supabase.from('users').upsert({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        password: hashedPassword
+      }, { onConflict: 'id' });
+
+      if (error) {
+        console.error('Error inserting user:', user.email, error);
+        throw error;
+      }
+      return data;
     }),
   );
 
-  return insertedUsers;
+  console.log(`Seeded ${results.length} users`);
+  return results;
 }
 
 async function seedInvoices() {
-  await sql`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`;
+  const results = await Promise.all(
+    invoices.map(async (invoice) => {
+      const { data, error } = await supabase.from('invoices').upsert({
+        customer_id: invoice.customer_id,
+        amount: invoice.amount,
+        status: invoice.status,
+        date: invoice.date
+      });
 
-  await sql`
-    CREATE TABLE IF NOT EXISTS invoices (
-      id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-      customer_id UUID NOT NULL,
-      amount INT NOT NULL,
-      status VARCHAR(255) NOT NULL,
-      date DATE NOT NULL
-    );
-  `;
-
-  const insertedInvoices = await Promise.all(
-    invoices.map(
-      (invoice) => sql`
-        INSERT INTO invoices (customer_id, amount, status, date)
-        VALUES (${invoice.customer_id}, ${invoice.amount}, ${invoice.status}, ${invoice.date})
-        ON CONFLICT (id) DO NOTHING;
-      `,
-    ),
+      if (error) {
+        console.error('Error inserting invoice:', invoice, error);
+        throw error;
+      }
+      return data;
+    })
   );
 
-  return insertedInvoices;
+  console.log(`Seeded ${results.length} invoices`);
+  return results;
 }
 
 async function seedCustomers() {
-  await sql`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`;
+  const results = await Promise.all(
+    customers.map(async (customer) => {
+      const { data, error } = await supabase.from('customers').upsert({
+        id: customer.id,
+        name: customer.name,
+        email: customer.email,
+        image_url: customer.image_url
+      }, { onConflict: 'id' });
 
-  await sql`
-    CREATE TABLE IF NOT EXISTS customers (
-      id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      email VARCHAR(255) NOT NULL,
-      image_url VARCHAR(255) NOT NULL
-    );
-  `;
-
-  const insertedCustomers = await Promise.all(
-    customers.map(
-      (customer) => sql`
-        INSERT INTO customers (id, name, email, image_url)
-        VALUES (${customer.id}, ${customer.name}, ${customer.email}, ${customer.image_url})
-        ON CONFLICT (id) DO NOTHING;
-      `,
-    ),
+      if (error) {
+        console.error('Error inserting customer:', customer.name, error);
+        throw error;
+      }
+      return data;
+    })
   );
 
-  return insertedCustomers;
+  console.log(`Seeded ${results.length} customers`);
+  return results;
 }
 
 async function seedRevenue() {
-  await sql`
-    CREATE TABLE IF NOT EXISTS revenue (
-      month VARCHAR(4) NOT NULL UNIQUE,
-      revenue INT NOT NULL
-    );
-  `;
+  const results = await Promise.all(
+    revenue.map(async (rev) => {
+      const { data, error } = await supabase.from('revenue').upsert({
+        month: rev.month,
+        revenue: rev.revenue
+      }, { onConflict: 'month' });
 
-  const insertedRevenue = await Promise.all(
-    revenue.map(
-      (rev) => sql`
-        INSERT INTO revenue (month, revenue)
-        VALUES (${rev.month}, ${rev.revenue})
-        ON CONFLICT (month) DO NOTHING;
-      `,
-    ),
+      if (error) {
+        console.error('Error inserting revenue:', rev.month, error);
+        throw error;
+      }
+      return data;
+    })
   );
 
-  return insertedRevenue;
+  console.log(`Seeded ${results.length} revenue records`);
+  return results;
 }
 
 export async function GET() {
-  try {
-    const result = await sql.begin((sql) => [
-      seedUsers(),
-      seedCustomers(),
-      seedInvoices(),
-      seedRevenue(),
-    ]);
+  console.log('Starting database seed...');
+  console.log('SUPABASE_URL:', process.env.SUPABASE_URL);
+  console.log('SERVICE_ROLE_KEY exists:', !!process.env.SUPABASE_SERVICE_ROLE_KEY);
 
+  try {
+    await seedUsers();
+    await seedCustomers();
+    await seedInvoices();
+    await seedRevenue();
+
+    console.log('Database seeded successfully!');
     return Response.json({ message: 'Database seeded successfully' });
   } catch (error) {
-    return Response.json({ error }, { status: 500 });
+    console.error('Seeding error:', error);
+    return Response.json({
+      error: error instanceof Error ? error.message : 'Unknown error',
+      details: error
+    }, { status: 500 });
   }
 }

@@ -7,6 +7,7 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
+    "@supabase/supabase-js": "^2.94.1",
     "@tailwindcss/forms": "^0.5.10",
     "autoprefixer": "10.4.20",
     "bcrypt": "^6.0.0",
@@ -19,6 +20,7 @@
     "react-dom": "latest",
     "tailwindcss": "3.4.17",
     "typescript": "5.7.3",
+    "undici": "^7.20.0",
     "use-debounce": "^10.0.4",
     "zod": "^3.25.17"
   },
