@@ -64,27 +64,35 @@ export async function fetchRevenue() {
 
 export async function fetchLatestInvoices() {
   try {
-    const { data, error } = await supabase
+    const { data: rawData, error } = await supabase
       .from('invoices')
-      .select('id, amount, customers(name, image_url, email)')
+      .select('id, amount, customers(id,name, image_url, email)')
       .order('date', { ascending: false })
       .limit(5);
+
+    console.log('Fetched latest invoices:', rawData?.length);
 
     if (error) {
       console.error('Error fetching latest invoices:', error);
       return [];
     }
 
-    const latestInvoices = (data ?? []).map((invoice: any) => {
-      const customer = invoice.customers?.[0] || {};
+    const data: LatestInvoiceRaw[] = (rawData ?? []).map((invoice: any) => {
+      const customer = invoice.customers?.[0] || invoice.customers || {};
       return {
         id: invoice.id,
         name: customer.name ?? '',
         image_url: customer.image_url ?? '',
         email: customer.email ?? '',
-        amount: formatCurrency(invoice.amount),
+        amount: invoice.amount,
       };
     });
+
+    const latestInvoices = data.map((invoice) => ({
+      ...invoice,
+      amount: formatCurrency(invoice.amount),
+    }));
+
     return latestInvoices;
   } catch (error) {
     console.error('Database Error:', error);
