@@ -9,7 +9,33 @@ import {
 } from './definitions';
 import { formatCurrency } from './utils';
 
+import { ProxyAgent, setGlobalDispatcher } from 'undici';
+import { createClient } from '@supabase/supabase-js';
+import RevenueChart from '../ui/dashboard/revenue-chart';
+
+// Configure global proxy agent for corporate network
+const proxyAgent = new ProxyAgent({
+  uri: 'http://host.containers.internal:9000',
+  requestTls: {
+    rejectUnauthorized: false
+  }
+});
+setGlobalDispatcher(proxyAgent);
+
+
 const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
+
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+);
+
 
 export async function fetchRevenue() {
   try {
@@ -19,11 +45,17 @@ export async function fetchRevenue() {
     // console.log('Fetching revenue data...');
     // await new Promise((resolve) => setTimeout(resolve, 3000));
 
-    const data = await sql<Revenue[]>`SELECT * FROM revenue`;
+    //const data = await sql<Revenue[]>`SELECT * FROM revenue`;
+    // cast data as Revenue[] to satisfy TypeScript, but in production you should validate this data
+    const { data, error }: { data: Revenue[] | null; error: any } = await supabase.from('revenue').select();
+    if (error) {
+      console.error('Error fetching revenue data:', error);
+      throw new Error('Failed to fetch revenue data.');
+    }
 
     // console.log('Data fetch completed after 3 seconds.');
 
-    return data;
+    return data ?? [];
   } catch (error) {
     console.error('Database Error:', error);
     throw new Error('Failed to fetch revenue data.');
@@ -32,21 +64,31 @@ export async function fetchRevenue() {
 
 export async function fetchLatestInvoices() {
   try {
-    const data = await sql<LatestInvoiceRaw[]>`
-      SELECT invoices.amount, customers.name, customers.image_url, customers.email, invoices.id
-      FROM invoices
-      JOIN customers ON invoices.customer_id = customers.id
-      ORDER BY invoices.date DESC
-      LIMIT 5`;
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('id, amount, customers(name, image_url, email)')
+      .order('date', { ascending: false })
+      .limit(5);
 
-    const latestInvoices = data.map((invoice) => ({
-      ...invoice,
-      amount: formatCurrency(invoice.amount),
-    }));
+    if (error) {
+      console.error('Error fetching latest invoices:', error);
+      return [];
+    }
+
+    const latestInvoices = (data ?? []).map((invoice: any) => {
+      const customer = invoice.customers?.[0] || {};
+      return {
+        id: invoice.id,
+        name: customer.name ?? '',
+        image_url: customer.image_url ?? '',
+        email: customer.email ?? '',
+        amount: formatCurrency(invoice.amount),
+      };
+    });
     return latestInvoices;
   } catch (error) {
     console.error('Database Error:', error);
-    throw new Error('Failed to fetch the latest invoices.');
+    return [];
   }
 }
 

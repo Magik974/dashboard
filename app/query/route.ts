@@ -1,26 +1,49 @@
-// import postgres from 'postgres';
+import { createClient } from '@supabase/supabase-js';
 
-// const sql = postgres(process.env.POSTGRES_URL!, { ssl: 'require' });
+import { ProxyAgent, setGlobalDispatcher } from 'undici';
 
-// async function listInvoices() {
-// 	const data = await sql`
-//     SELECT invoices.amount, customers.name
-//     FROM invoices
-//     JOIN customers ON invoices.customer_id = customers.id
-//     WHERE invoices.amount = 666;
-//   `;
+// Configure global proxy agent for corporate network
+const proxyAgent = new ProxyAgent({
+  uri: 'http://host.containers.internal:9000',
+  requestTls: {
+    rejectUnauthorized: false
+  }
+});
+setGlobalDispatcher(proxyAgent);
 
-// 	return data;
-// }
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  }
+);
+
+async function listInvoices() {
+
+
+  const { data, error } = await supabase.from('invoices').select().eq('amount', 666);
+
+  if (error) {
+    console.error('Error retrieving invoices:', error);
+    throw error;
+  }
+  return data;
+
+
+
+  return data;
+}
+
 
 export async function GET() {
-  return Response.json({
-    message:
-      'Uncomment this file and remove this line. You can delete this file when you are finished.',
-  });
-  // try {
-  // 	return Response.json(await listInvoices());
-  // } catch (error) {
-  // 	return Response.json({ error }, { status: 500 });
-  // }
+
+  try {
+    return Response.json(await listInvoices());
+  } catch (error) {
+    return Response.json({ error }, { status: 500 });
+  }
 }
