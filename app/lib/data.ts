@@ -42,8 +42,8 @@ export async function fetchRevenue() {
     // Artificially delay a response for demo purposes.
     // Don't do this in production :)
 
-    // console.log('Fetching revenue data...');
-    // await new Promise((resolve) => setTimeout(resolve, 3000));
+    console.log('Fetching revenue data...');
+    await new Promise((resolve) => setTimeout(resolve, 3000));
 
     //const data = await sql<Revenue[]>`SELECT * FROM revenue`;
     // cast data as Revenue[] to satisfy TypeScript, but in production you should validate this data
@@ -53,7 +53,7 @@ export async function fetchRevenue() {
       throw new Error('Failed to fetch revenue data.');
     }
 
-    // console.log('Data fetch completed after 3 seconds.');
+    console.log('Data fetch completed after 3 seconds.');
 
     return data ?? [];
   } catch (error) {
@@ -64,6 +64,9 @@ export async function fetchRevenue() {
 
 export async function fetchLatestInvoices() {
   try {
+    console.log('Fetching invoices data...');
+    await new Promise((resolve) => setTimeout(resolve, 5000));
+
     const { data: rawData, error } = await supabase
       .from('invoices')
       .select('id, amount, customers(id,name, image_url, email)')
@@ -105,12 +108,32 @@ export async function fetchCardData() {
     // You can probably combine these into a single SQL query
     // However, we are intentionally splitting them to demonstrate
     // how to initialize multiple queries in parallel with JS.
-    const invoiceCountPromise = sql`SELECT COUNT(*) FROM invoices`;
-    const customerCountPromise = sql`SELECT COUNT(*) FROM customers`;
-    const invoiceStatusPromise = sql`SELECT
-         SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) AS "paid",
-         SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) AS "pending"
-         FROM invoices`;
+    // const invoiceCountPromise = sql`SELECT COUNT(*) FROM invoices`;
+    // const customerCountPromise = sql`SELECT COUNT(*) FROM customers`;
+    // const invoiceStatusPromise = sql`SELECT
+    //      SUM(CASE WHEN status = 'paid' THEN amount ELSE 0 END) AS "paid",
+    //      SUM(CASE WHEN status = 'pending' THEN amount ELSE 0 END) AS "pending"
+    //      FROM invoices`;
+
+
+
+    //       const { data: rawData, error } = await supabase
+    //   .from('invoices')
+    //   .select('id, amount, customers(id,name, image_url, email)')
+    //   .order('date', { ascending: false })
+    //   .limit(5);
+
+
+
+    const invoiceCountPromise = await supabase.from('invoices').select('*', { count: 'exact' });
+    const customerCountPromise = await supabase.from('customers').select('*', { count: 'exact' });
+    const invoiceStatusPromise = await supabase.rpc('get_invoices_status_totals_no_params');
+
+    //  const numberOfInvoices = Number(invoiceCountPromise.count ?? '0');
+    //   const numberOfCustomers = Number(data[1][0].count ?? '0');
+    //   const totalPaidInvoices = formatCurrency(data[2][0].paid ?? '0');
+    //   const totalPendingInvoices = formatCurrency(data[2][0].pending ?? '0');
+
 
     const data = await Promise.all([
       invoiceCountPromise,
@@ -118,10 +141,15 @@ export async function fetchCardData() {
       invoiceStatusPromise,
     ]);
 
-    const numberOfInvoices = Number(data[0][0].count ?? '0');
-    const numberOfCustomers = Number(data[1][0].count ?? '0');
-    const totalPaidInvoices = formatCurrency(data[2][0].paid ?? '0');
-    const totalPendingInvoices = formatCurrency(data[2][0].pending ?? '0');
+    console.log('Fetched card data:', {
+      invoiceCount: data[0].count,
+      customerCount: data[1].count,
+      invoiceStatus: data[2],
+    });
+    const numberOfInvoices = Number(data[0].count ?? '0');
+    const numberOfCustomers = Number(data[1].count ?? '0');
+    const totalPaidInvoices = formatCurrency(data[2].data[0].paid ?? '0');
+    const totalPendingInvoices = formatCurrency(data[2].data[0].pending ?? '0');
 
     return {
       numberOfCustomers,
