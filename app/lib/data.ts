@@ -280,15 +280,17 @@ export async function fetchInvoiceById(id: string) {
 
 export async function fetchCustomers() {
   try {
-    const customers = await sql<CustomerField[]>`
-      SELECT
-        id,
-        name
-      FROM customers
-      ORDER BY name ASC
-    `;
 
-    return customers;
+
+    const { data: customers, error }: { data: CustomerField[] | null; error: any }
+      = await supabase.from('customers').select('id, name').order('name', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching customers:', error);
+      throw new Error('Failed to fetch all customers.');
+    }
+
+    return customers ?? [];
   } catch (err) {
     console.error('Database Error:', err);
     throw new Error('Failed to fetch all customers.');
