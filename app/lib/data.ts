@@ -254,29 +254,30 @@ export async function fetchInvoicesPages(query: string) {
 }
 
 export async function fetchInvoiceById(id: string) {
-  try {
-    const data = await sql<InvoiceForm[]>`
-      SELECT
-        invoices.id,
-        invoices.customer_id,
-        invoices.amount,
-        invoices.status
-      FROM invoices
-      WHERE invoices.id = ${id};
-    `;
 
-    const invoice = data.map((invoice) => ({
-      ...invoice,
-      // Convert amount from cents to dollars
-      amount: invoice.amount / 100,
-    }));
 
-    return invoice[0];
-  } catch (error) {
-    console.error('Database Error:', error);
-    throw new Error('Failed to fetch invoice.');
+  const { data, error } = await supabase
+    .from('invoices')
+    .select('id, customer_id, amount, status')
+    .eq('id', id)
+    .single();
+  console.log("Fetched invoice by ID:", data); // Invoice is an empty array []
+
+  if (error) {
+    // PGRST116 = no rows found — return null so the caller can handle notFound()
+    if (error.code === 'PGRST116') return null;
+    throw new Error('Failed to fetch invoice by ID.');
   }
+
+  const invoice = {
+    ...data,
+    // Convert amount from cents to dollars
+    amount: data.amount / 100,
+  };
+
+  return invoice;
 }
+
 
 export async function fetchCustomers() {
   try {
