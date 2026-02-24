@@ -4,6 +4,8 @@ import { ProxyAgent, setGlobalDispatcher } from 'undici';
 import { createClient } from '@supabase/supabase-js';
 import { revalidatePath } from 'next/cache';
 import { redirect } from 'next/navigation';
+import { signIn } from '@/auth';
+import { AuthError } from 'next-auth';
 
 export type State = {
   errors?: {
@@ -12,6 +14,12 @@ export type State = {
     status?: string[];
   };
   message?: string | null;
+  fields?: {
+    customerId?: string;
+    amount?: string;
+    status?: string;
+  };
+  submittedAt?: number;
 };
 
 // Configure global proxy agent for corporate network
@@ -53,6 +61,12 @@ export async function createInvoice(prevState: State, formData: FormData) {
     return {
       errors: validatedFields.error.flatten().fieldErrors,
       message: 'Missing Fields. Failed to Create Invoice.',
+      fields: {
+        customerId: formData.get('customerId')?.toString(),
+        amount: formData.get('amount')?.toString(),
+        status: formData.get('status')?.toString(),
+      },
+      submittedAt: Date.now(),
     };
   }
 
@@ -150,4 +164,24 @@ export async function deleteInvoice(id: string) {
     .delete()
     .eq('id', id);
   revalidatePath('/dashboard/invoices');
+}
+
+
+export async function authenticate(
+  prevState: string | undefined,
+  formData: FormData,
+) {
+  try {
+    await signIn('credentials', formData);
+  } catch (error) {
+    if (error instanceof AuthError) {
+      switch (error.type) {
+        case 'CredentialsSignin':
+          return 'Invalid credentials.';
+        default:
+          return 'Something went wrong.';
+      }
+    }
+    throw error;
+  }
 }
